@@ -4,3 +4,6 @@
 [submodule "nlopt"]
 	path = nlopt
 	url = https://github.com/binb1nwu/nlopt.git
+[submodule "piper_ros"]
+	path = piper_ros
+	url = https://github.com/binb1nwu/piper_ros.git
