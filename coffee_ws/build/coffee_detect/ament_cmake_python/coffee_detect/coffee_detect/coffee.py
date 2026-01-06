@@ -305,13 +305,13 @@ def main(args=None):
                 p0, q0 = node.move_pose_along_axis(p, q, distance=0.1, axis='z')
 
                 node.publish_pos(p0, q0)
-                time.sleep(3.0)  # 确保动作完成
+                time.sleep(5.0)  # 确保动作完成
 
                 # 打开夹爪
                 node.publish_gripper(gap=0.035)  
 
                 node.publish_pos(p, q)
-                time.sleep(3.0)
+                time.sleep(5.0)
 
                 # 关闭夹爪
                 node.publish_gripper(gap=0.0)

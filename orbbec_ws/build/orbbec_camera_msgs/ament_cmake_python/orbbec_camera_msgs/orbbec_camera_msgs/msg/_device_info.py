@@ -64,7 +64,6 @@ class DeviceInfo(metaclass=Metaclass_DeviceInfo):
         '_serial_number',
         '_firmware_version',
         '_supported_min_sdk_version',
-        '_current_sdk_version',
         '_hardware_version',
     ]
 
@@ -74,13 +73,11 @@ class DeviceInfo(metaclass=Metaclass_DeviceInfo):
         'serial_number': 'string',
         'firmware_version': 'string',
         'supported_min_sdk_version': 'string',
-        'current_sdk_version': 'string',
         'hardware_version': 'string',
     }
 
     SLOT_TYPES = (
         rosidl_parser.definition.NamespacedType(['std_msgs', 'msg'], 'Header'),  # noqa: E501
-        rosidl_parser.definition.UnboundedString(),  # noqa: E501
         rosidl_parser.definition.UnboundedString(),  # noqa: E501
         rosidl_parser.definition.UnboundedString(),  # noqa: E501
         rosidl_parser.definition.UnboundedString(),  # noqa: E501
@@ -98,7 +95,6 @@ class DeviceInfo(metaclass=Metaclass_DeviceInfo):
         self.serial_number = kwargs.get('serial_number', str())
         self.firmware_version = kwargs.get('firmware_version', str())
         self.supported_min_sdk_version = kwargs.get('supported_min_sdk_version', str())
-        self.current_sdk_version = kwargs.get('current_sdk_version', str())
         self.hardware_version = kwargs.get('hardware_version', str())
 
     def __repr__(self):
@@ -139,8 +135,6 @@ class DeviceInfo(metaclass=Metaclass_DeviceInfo):
         if self.firmware_version != other.firmware_version:
             return False
         if self.supported_min_sdk_version != other.supported_min_sdk_version:
-            return False
-        if self.current_sdk_version != other.current_sdk_version:
             return False
         if self.hardware_version != other.hardware_version:
             return False
@@ -216,19 +210,6 @@ class DeviceInfo(metaclass=Metaclass_DeviceInfo):
                 isinstance(value, str), \
                 "The 'supported_min_sdk_version' field must be of type 'str'"
         self._supported_min_sdk_version = value
-
-    @builtins.property
-    def current_sdk_version(self):
-        """Message field 'current_sdk_version'."""
-        return self._current_sdk_version
-
-    @current_sdk_version.setter
-    def current_sdk_version(self, value):
-        if __debug__:
-            assert \
-                isinstance(value, str), \
-                "The 'current_sdk_version' field must be of type 'str'"
-        self._current_sdk_version = value
 
     @builtins.property
     def hardware_version(self):
