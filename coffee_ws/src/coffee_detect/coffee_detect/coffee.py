@@ -9,12 +9,14 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 from pathlib import Path
-from segment_anything import sam_model_registry, SamPredictor
+from ultralytics.models.sam import SAM3SemanticPredictor
 from scipy.spatial.transform import Rotation as R_scipy
 import open3d as o3d
 from sklearn.decomposition import PCA
 import warnings
 import time
+import json
+import torch
 warnings.filterwarnings("ignore")
 
 
@@ -24,7 +26,6 @@ class CoffeeDetectNode(Node):
 
         # 声明参数（无默认值！）
         self.declare_parameter('sam_checkpoint')
-        self.declare_parameter('device')
         self.declare_parameter('camera_fx')
         self.declare_parameter('camera_fy')
         self.declare_parameter('camera_cx')
@@ -32,10 +33,9 @@ class CoffeeDetectNode(Node):
         self.declare_parameter('min_area')
         self.declare_parameter('handeye_pos')
         self.declare_parameter('handeye_quat')
-
+        self.declare_parameter('search_poses_file')
         # 从参数服务器获取值
         self.sam_checkpoint = self.get_parameter('sam_checkpoint').value
-        self.device = self.get_parameter('device').value
         self.fx = self.get_parameter('camera_fx').value
         self.fy = self.get_parameter('camera_fy').value
         self.cx = self.get_parameter('camera_cx').value
@@ -43,18 +43,26 @@ class CoffeeDetectNode(Node):
         self.min_area = self.get_parameter('min_area').value
         self.handeye_pos = self.get_parameter('handeye_pos').value
         self.handeye_quat = self.get_parameter('handeye_quat').value
+        self.search_poses_file = self.get_parameter('search_poses_file').value
 
         # 验证路径
         if not Path(self.sam_checkpoint).exists():
             self.get_logger().fatal(f"SAM checkpoint not found: {self.sam_checkpoint}")
             raise FileNotFoundError(f"SAM checkpoint not found: {self.sam_checkpoint}")
 
-        # 加载 SAM
+        # 加载 SAM3
         self.get_logger().info("Loading SAM model...")
-        sam = sam_model_registry["vit_h"](checkpoint=self.sam_checkpoint)
-        sam.to(device=self.device)
-        self.sam_predictor = SamPredictor(sam)
-        self.get_logger().info(f"SAM loaded on {self.device}.")
+        # Initialize predictor with configuration
+        overrides = dict(
+            conf=0.5,
+            task="segment",
+            mode="predict",
+            model=self.sam_checkpoint,
+            half=True,  # Use FP16 for faster inference
+            save=False,
+        )
+        self.predictor = SAM3SemanticPredictor(overrides=overrides)
+        self.get_logger().info(f"SAM loaded.")
 
         # 手眼标定矩阵
         self.T_e2c = self.pose_to_matrix(self.handeye_pos, self.handeye_quat)
@@ -119,58 +127,21 @@ class CoffeeDetectNode(Node):
         """执行完整处理逻辑（SAM、点云、发布等）"""
         try:
             self.get_logger().info("Processing synchronized frame...")
-            rgb_rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
-
-            # --- Color mask ---
-            hsv = cv2.cvtColor(rgb_rgb, cv2.COLOR_RGB2HSV)
-            lower = np.array([0, 30, 20])
-            upper = np.array([40, 255, 200])
-            mask = cv2.inRange(hsv, lower, upper)
-            kernel = np.ones((5, 5), np.uint8)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-            mask_clean = np.zeros_like(mask)
-            for i in range(1, num_labels):
-                if stats[i, cv2.CC_STAT_AREA] > self.min_area:
-                    mask_clean[labels == i] = 255
-
-            # --- Find vertical bag ---
-            contours, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            best_bag = None
-            max_area = 0
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if area < self.min_area:
-                    continue
-                x, y, w, h = cv2.boundingRect(cnt)
-                if h < w:
-                    continue
-                if area > max_area:
-                    max_area = area
-                    best_bag = (x, y, x + w, y + h)
-
-            if best_bag is None:
-                self.get_logger().warn("No valid bag detected.")
-                return
-
             # --- SAM refinement ---
-            self.sam_predictor.set_image(rgb_rgb)
-            input_box = np.array(best_bag)
-            masks, _, _ = self.sam_predictor.predict(
-                point_coords=None,
-                point_labels=None,
-                box=input_box[None, :],
-                multimask_output=True,
-            )
-            final_mask = masks[2].astype(np.uint8)
-
+            self.predictor.set_image(rgb)
+            results = self.predictor(text=["paper bag"])
+            if results[0].boxes.shape[0] == 0:
+                self.get_logger().warn("No detections from SAM.")
+                return None, None
+            max_conf_index = torch.argmax(results[0].boxes.conf).item()
+            final_mask = results[0].masks.data.cpu().numpy()[max_conf_index]
+            self.get_logger().info(f"SAM detection confidence: {results[0].boxes.conf[max_conf_index]:.3f}")
+            
             # --- Point cloud ---
             ys, xs = np.where(final_mask == 1)
             if len(xs) == 0:
                 self.get_logger().warn("Empty SAM mask.")
-                return
+                return None, None
 
             depths = depth[ys, xs].astype(np.float32)
             if depth.dtype == np.uint16:
@@ -179,7 +150,7 @@ class CoffeeDetectNode(Node):
             xs, ys, depths = xs[valid], ys[valid], depths[valid]
             if len(xs) == 0:
                 self.get_logger().warn("No valid depth.")
-                return
+                return None, None
 
             zs = depths
             xs_3d = (xs - self.cx) * zs / self.fx
@@ -192,7 +163,7 @@ class CoffeeDetectNode(Node):
             plane_model, inliers = pcd.segment_plane(distance_threshold=0.01, ransac_n=5, num_iterations=1000)
             if len(inliers) < 100:
                 self.get_logger().warn("RANSAC failed.")
-                return
+                return None, None
 
             front_points = np.asarray(pcd.select_by_index(inliers).points)
             normal = np.array(plane_model[:3])
@@ -221,9 +192,9 @@ class CoffeeDetectNode(Node):
 
             self.get_logger().info(f"Bag dimensions - Length: {length_long:.3f} m, Width: {length_short:.3f} m")
 
-            # if not (0.17 < length_short < 0.25 and 0.25 < length_long < 0.32):
-            #     self.get_logger().warn("Detected bag size out of expected range.")
-            #     return
+            if not (0.15 < length_short < 0.25 and 0.25 < length_long < 0.35):
+                self.get_logger().warn("Detected bag size out of expected range.")
+                return None, None
 
             R_cam = np.column_stack((x_axis, y_axis, z_axis))
             R_adjust = R_scipy.from_euler('z', 90, degrees=True).as_matrix()
@@ -289,51 +260,83 @@ def main(args=None):
     try:
         time.sleep(3.0)  # 等待初始化完成
         # 观测姿态 方便拍摄
-        node.publish_pos(
-            position=np.array([-0.065623, 0.001, 0.400744]),
-            quaternion=np.array([0.004185950432734016, 0.7850548335728314, 0.01612455744139523, 0.6186224168049711])
-        )
-        time.sleep(3.0)  # 确保动作完成
+        # node.publish_pos(
+        #     position=np.array([-0.065623, 0.001, 0.400744]),
+        #     quaternion=np.array([0.004185950432734016, 0.7850548335728314, 0.01612455744139523, 0.6186224168049711])
+        # )
+        # time.sleep(3.0)  # 确保动作完成
+        with open(node.search_poses_file, 'r') as f:
+            search_poses = json.load(f)
+        for idx, pose in enumerate(search_poses):
+            node.get_logger().info(f"Moving to search pose {idx + 1}/{len(search_poses)}")
 
-        while rclpy.ok():
+            # 提取位置和四元数
+            p_search = np.array([
+                pose['position']['x'],
+                pose['position']['y'],
+                pose['position']['z']
+            ])
+            q_search = np.array([
+                pose['orientation']['x'],
+                pose['orientation']['y'],
+                pose['orientation']['z'],
+                pose['orientation']['w']
+            ])
 
-            # 非阻塞地处理一次回调（接收新消息）
-            rclpy.spin_once(node, timeout_sec=0.5)
+            # === 2. 移动到搜索位姿 ===
+            node.publish_pos(p_search, q_search)
+            time.sleep(3.0)  # 等待机械臂到位 + 稳定
 
-            # 如果有新帧，处理它
-            if node.latest_frame is not None:
-                rgb, depth, end_pose_msg = node.latest_frame
-                node.latest_frame = None  # 清空，防止重复处理
+            # === 3. 等待新图像帧（最多 2 秒）===
+            node.latest_frame = None
+            wait_start = time.time()
+            while node.latest_frame is None and (time.time() - wait_start) < 2.0:
+                rclpy.spin_once(node, timeout_sec=0.1)
 
-                # 执行完整处理流程
-                p, q = node.process_frame(rgb, depth, end_pose_msg)
+            if node.latest_frame is None:
+                node.get_logger().warn("No frame received at this pose, skip.")
+                continue
 
-                # 提手位姿
-                p, q = node.move_pose_along_axis(p, q, distance=-0.04, axis='y')
+            # === 4. 处理当前帧 ===
+            rgb, depth, end_pose_msg = node.latest_frame
+            node.latest_frame = None
 
-                # 抓取前位姿
-                p0, q0 = node.move_pose_along_axis(p, q, distance=0.1, axis='z')
+            p, q = node.process_frame(rgb, depth, end_pose_msg)
 
-                node.publish_pos(p0, q0)
-                time.sleep(3.0)  # 确保动作完成
+            # === 5. 判断是否检测成功 ===
+            if p is None or q is None:
+                node.get_logger().info("No target detected at this pose.")
+                continue
+            if p[2] < 0.25:
+                node.get_logger().info("Detected target too low, skip.")
+                continue
+            # 提手位姿
+            p, q = node.move_pose_along_axis(p, q, distance=-0.04, axis='y')
 
-                # 打开夹爪
-                node.publish_gripper(gap=0.035)
+            # 抓取前位姿
+            p0, q0 = node.move_pose_along_axis(p, q, distance=0.1, axis='z')
 
-                # 移动到抓取点
-                node.publish_pos(p, q)
-                time.sleep(3.0)
+            node.publish_pos(p0, q0)
+            time.sleep(3.0)  # 确保动作完成
 
-                # 关闭夹爪
-                node.publish_gripper(gap=0.0)
-                time.sleep(3.0)
+            # 打开夹爪
+            node.publish_gripper(gap=0.035)
+            time.sleep(3.0)
 
-                # 提起物体
-                pe = np.array([0.046216, 0.002615, 0.478671])
-                qe = np.array([-0.0030402966631021544, 0.6838194050006842, 0.02950326107270329, 0.7290482395059921])
-                node.publish_pos(pe, qe)
+            # 移动到抓取点
+            node.publish_pos(p, q)
+            time.sleep(3.0)
 
-                break  # 处理完一帧后退出（可根据需要修改）
+            # 关闭夹爪
+            node.publish_gripper(gap=0.0)
+            time.sleep(3.0)
+
+            # 提起物体
+            pe = np.array([0.046216, 0.002615, 0.478671])
+            qe = np.array([-0.0030402966631021544, 0.6838194050006842, 0.02950326107270329, 0.7290482395059921])
+            node.publish_pos(pe, qe)
+
+            break  # 处理完一帧后退出（可根据需要修改）
 
     except KeyboardInterrupt:
         print("\nShutting down...")
