@@ -1,4 +1,0 @@
-source;share/trac_ik/local_setup.bash
-source;share/trac_ik/local_setup.dsv
-source;share/trac_ik/local_setup.sh
-source;share/trac_ik/local_setup.zsh

@@ -1,1 +1,0 @@
-moveit_core;class_loader;pluginlib;eigen;tf2;tf2_kdl;orocos_kdl;moveit_msgs;trac_ik_lib;NLopt;urdfdom;python-lxml

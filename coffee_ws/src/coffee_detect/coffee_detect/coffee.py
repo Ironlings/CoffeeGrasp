@@ -1,4 +1,4 @@
-#!/home/wzb/miniconda3/envs/sam/bin/python
+#!/home/agv/anaconda3/envs/yolo/bin/python
 import rclpy
 from rclpy.node import Node
 from message_filters import Subscriber, ApproximateTimeSynchronizer
@@ -72,8 +72,8 @@ class CoffeeDetectNode(Node):
         self.grasp_pub = self.create_publisher(PoseStamped, '/my_pose_cmd', 10)
         self.gripper_pub = self.create_publisher(Float64, '/my_gripper_cmd', 10)
 
-        rgb_sub = Subscriber(self, Image, '/camera/color/image_raw')
-        depth_sub = Subscriber(self, Image, '/camera/depth/image_raw')
+        rgb_sub = Subscriber(self, Image, '/dabai/color/image_raw')
+        depth_sub = Subscriber(self, Image, '/dabai/depth/image_raw')
         pose_sub = Subscriber(self, PoseStamped, '/end_pose_stamped')
 
         self.ts = ApproximateTimeSynchronizer(
@@ -188,7 +188,7 @@ class CoffeeDetectNode(Node):
 
             length_long = np.max(proj @ y_axis) - np.min(proj @ y_axis)
             length_short = np.max(proj @ x_axis) - np.min(proj @ x_axis)
-            center_point = origin - y_axis * (length_long / 2)
+            center_point = origin - y_axis * (length_long / 2) - y_axis * 0.06
 
             self.get_logger().info(f"Bag dimensions - Length: {length_long:.3f} m, Width: {length_short:.3f} m")
 
@@ -197,8 +197,8 @@ class CoffeeDetectNode(Node):
                 return None, None
 
             R_cam = np.column_stack((x_axis, y_axis, z_axis))
-            R_adjust = R_scipy.from_euler('z', 90, degrees=True).as_matrix()
-            R_grasp = R_cam @ R_adjust
+            #R_adjust = R_scipy.from_euler('z', 90, degrees=True).as_matrix()
+            R_grasp = R_cam #@ R_adjust
             quat_cam = R_scipy.from_matrix(R_grasp).as_quat()
 
             # --- Transform to base ---
@@ -212,7 +212,7 @@ class CoffeeDetectNode(Node):
             pos_base, quat_base = self.matrix_to_pose(T_obj_in_base)
 
             # --- Retreat along local -Z ---
-            pos_base, quat_base = self.move_pose_along_axis(pos_base, quat_base, distance=0.08, axis='z')
+            pos_base, quat_base = self.move_pose_along_axis(pos_base, quat_base, distance=0.07, axis='z')
 
             self.get_logger().info(
                 f"Pos = [{pos_base[0]:.3f}, {pos_base[1]:.3f}, {pos_base[2]:.3f}], "
@@ -259,12 +259,7 @@ def main(args=None):
 
     try:
         time.sleep(3.0)  # 等待初始化完成
-        # 观测姿态 方便拍摄
-        # node.publish_pos(
-        #     position=np.array([-0.065623, 0.001, 0.400744]),
-        #     quaternion=np.array([0.004185950432734016, 0.7850548335728314, 0.01612455744139523, 0.6186224168049711])
-        # )
-        # time.sleep(3.0)  # 确保动作完成
+
         with open(node.search_poses_file, 'r') as f:
             search_poses = json.load(f)
         for idx, pose in enumerate(search_poses):
@@ -311,7 +306,7 @@ def main(args=None):
                 node.get_logger().info("Detected target too low, skip.")
                 continue
             # 提手位姿
-            p, q = node.move_pose_along_axis(p, q, distance=-0.04, axis='y')
+            #p, q = node.move_pose_along_axis(p, q, distance=-0.04, axis='y')
 
             # 抓取前位姿
             p0, q0 = node.move_pose_along_axis(p, q, distance=0.1, axis='z')
@@ -332,8 +327,10 @@ def main(args=None):
             time.sleep(3.0)
 
             # 提起物体
-            pe = np.array([0.046216, 0.002615, 0.478671])
-            qe = np.array([-0.0030402966631021544, 0.6838194050006842, 0.02950326107270329, 0.7290482395059921])
+            # pe = np.array([0.046216, 0.002615, 0.478671])
+            # qe = np.array([-0.0030402966631021544, 0.6838194050006842, 0.02950326107270329, 0.7290482395059921])
+            pe = np.array([-0.019305, -0.007057, 0.522798])
+            qe = np.array([-0.4950316297280355, 0.44675858673883606, -0.5376808178489426, 0.5159939814195661])
             node.publish_pos(pe, qe)
 
             break  # 处理完一帧后退出（可根据需要修改）

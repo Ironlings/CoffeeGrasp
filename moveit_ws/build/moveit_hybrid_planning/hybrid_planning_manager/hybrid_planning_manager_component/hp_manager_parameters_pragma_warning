@@ -1,1 +1,0 @@
-#pragma message("#include \"hp_manager_parameters.hpp\" is deprecated. Use #include <moveit_hybrid_planning/hp_manager_parameters.hpp> instead.")

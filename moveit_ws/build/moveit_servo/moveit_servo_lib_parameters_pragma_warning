@@ -1,1 +1,0 @@
-#pragma message("#include \"moveit_servo_lib_parameters.hpp\" is deprecated. Use #include <moveit_servo/moveit_servo_lib_parameters.hpp> instead.")

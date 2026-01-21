@@ -1,4 +1,0 @@
-source;share/moveit_ros_trajectory_cache/local_setup.bash
-source;share/moveit_ros_trajectory_cache/local_setup.dsv
-source;share/moveit_ros_trajectory_cache/local_setup.sh
-source;share/moveit_ros_trajectory_cache/local_setup.zsh

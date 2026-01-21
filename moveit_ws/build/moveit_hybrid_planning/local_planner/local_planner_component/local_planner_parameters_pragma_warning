@@ -1,1 +1,0 @@
-#pragma message("#include \"local_planner_parameters.hpp\" is deprecated. Use #include <moveit_hybrid_planning/local_planner_parameters.hpp> instead.")

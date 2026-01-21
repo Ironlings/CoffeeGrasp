@@ -1,3 +1,0 @@
-source;share/trac_ik_lib/environment/ament_prefix_path.sh
-source;share/trac_ik_lib/environment/library_path.sh
-source;share/trac_ik_lib/environment/path.sh

@@ -1,0 +1,13 @@
+moveit_ws/
+nlopt/
+orbbec_ws/
+OrbbecSDK/
+piper_sdk/
+piper_ros/
+trac_ws/
+
+build/
+install/
+log/
+Log/
+runs/
