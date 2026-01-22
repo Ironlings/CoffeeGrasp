@@ -6,7 +6,20 @@
 
 > 基于 RGB-D 点云与 SAM3 语义分割的咖啡袋位姿估计与机械臂抓取系统。
 
+![mask](coffee_ws/src/coffee_detect/coffeetest/img/mask.jpg)  
+*掩码图像：通过语义分割提取出的咖啡袋区域（蓝色）。*
+
+![depth img](coffee_ws/src/coffee_detect/coffeetest/img/depth.png)  
+*原始深度图：由 Orbbec Dabai 相机获取的场景深度信息，用于后续点云重建。*
+
+![pointcloud](coffee_ws/src/coffee_detect/coffeetest/img/pc.png)  
+*3D 点云：基于 mask 和对齐后的 RGB-D 数据生成的点云，用于位姿估计与抓取规划。*
+
+![grasp coffee demo](coffee_ws/src/coffee_detect/coffeetest/img/VID_20260122_161541.gif)  
+*抓取演示动画（2倍速）：机械臂根据检测到的咖啡袋位姿，自主完成接近、夹取与提起。*
+
 ---
+
 
 ## 📦 安装
 
@@ -78,3 +91,5 @@ ros2 launch coffee_detect coffee.launch.py
 ```
 
 > **提示**：建议在不同终端窗口中分别运行上述命令，便于日志监控与调试。
+
+---
