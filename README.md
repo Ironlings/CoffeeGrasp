@@ -1,5 +1,7 @@
 ## 项目简介
 
+ 简体中文 | [English](README(EN).md) 
+
 ![ubuntu](https://img.shields.io/badge/Ubuntu-22.04-orange.svg)
 ![humble](https://img.shields.io/badge/ROS-humble-blue.svg)
 ![python](https://img.shields.io/badge/Python-3.10-3776ab.svg)
