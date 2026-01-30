@@ -15,6 +15,10 @@ gnome-terminal --title="ORBBEC Camera 335L" -- bash -c "
     ros2 launch orbbec_camera gemini_330_series.launch.py usb_port:=2-8 color_width:=1280 color_height:=800 color_fps:=30 depth_width:=1280 depth_height:=800 depth_fps:=30;
     exec bash
 "
-
+gnome-terminal --title="Coffee Drop" -- bash -c "
+    source ~/anaconda3/bin/activate yolo &&
+    ros2 launch coffee_detect drop.launch.py;
+    exec bash
+"
 
 echo "🚀 所有 ROS 节点已启动！"

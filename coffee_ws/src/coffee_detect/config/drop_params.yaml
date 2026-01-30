@@ -1,0 +1,41 @@
+# drop_params.yaml
+# 咖啡袋放置任务参数配置
+# 适用场景：双ArUco标记定位篮子 + 机械臂精准放置
+
+coffee_drop:
+  ros__parameters:
+    # === 相机标定参数 ===
+    # 来源：Gemini 335L相机出厂标定结果
+    gemini_fx: 612.593017578125    # 焦距x (像素)
+    gemini_fy: 612.551513671875    # 焦距y (像素)
+    gemini_cx: 639.3008422851562   # 光心x (像素)
+    gemini_cy: 405.6265869140625   # 光心y (像素)
+    
+    # === ArUco标记配置 ===
+    marker_size_mm: 48.3           # 标记物理尺寸 (毫米) - 与实际打印尺寸严格一致
+    aruco_dict_type: "6X6_250"     # 支持: 4X4_50, 5X5_100, 6X6_250, 7X7_1000
+    required_markers: [0, 1]       # 必需检测的标记ID列表 (篮子两侧标记)
+    
+    # === 任务几何参数 (关键!) ===
+    # 注：所有单位均为米(m)，正负方向需结合手眼矩阵验证
+    basket_offset_m: -0.09         # 沿标记Z轴向"深处"偏移量 (篮子中心深度补偿)
+    height_offset_m: 0.40          # 机械臂Z轴高度补偿 (袋子底部到篮子底部)
+    approach_offset_m: 0.12        # 沿夹爪Z轴负方向接近偏移 (避免碰撞篮子边缘)
+    
+    # === 夹爪控制参数 ===
+    gripper_open_gap: 0.035        # 夹爪半开距 (米) - 实际开合宽度 = 2 * gap
+    
+    # === 鲁棒性参数 ===
+    max_processing_retries: 5      # 位姿计算最大重试次数
+    retry_interval_sec: 2.5        # 重试间隔 (秒)
+    enable_visualization: false    # 调试时设为true显示ArUco检测结果
+    
+    # === 手眼标定矩阵 (4x4齐次变换) ===
+    # 格式: 行优先展开 [r11,r12,r13,t1, r21,r22,r23,t2, r31,r32,r33,t3, 0,0,0,1]
+    hand_eye_matrix: [
+      0.0,  0.0,  1.0,  0.14,   # X_arm = Z_cam + 0.14
+     -1.0,  0.0,  0.0,  0.0,    # Y_arm = -X_cam
+      0.0, -1.0,  0.0, -0.25,   # Z_arm = -Y_cam - 0.25
+      0.0,  0.0,  0.0,  1.0
+    ]
+    

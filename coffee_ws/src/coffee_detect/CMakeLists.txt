@@ -28,6 +28,7 @@ install(DIRECTORY config/
 # 安装可执行脚本（关键！）
 install(PROGRAMS
   coffee_detect/coffee.py
+  coffee_detect/drop.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -11,15 +11,15 @@ def generate_launch_description():
 
     config_file_arg = DeclareLaunchArgument(
         name='config_file',
-        default_value=PathJoinSubstitution([pkg_share, 'config', 'params.yaml']),
+        default_value=PathJoinSubstitution([pkg_share, 'config', 'drop_params.yaml']),
         description='Path to parameter config file'
     )
 
     # 启动节点
     grasp_node = Node(
         package='coffee_detect',
-        executable='coffee.py',
-        name='coffee_detect',
+        executable='drop.py',
+        name='coffee_drop',
         output='screen',
         parameters=[LaunchConfiguration('config_file')]
     )
