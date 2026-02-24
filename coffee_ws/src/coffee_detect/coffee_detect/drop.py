@@ -31,9 +31,9 @@ class CoffeeDropNode(Node):
         self.declare_parameter('required_markers', [0, 1])
         
         # 任务关键参数（全部可配置！）
-        self.declare_parameter('basket_offset_m', -0.09)      # 向标记深处偏移/篮子宽度（米）
-        self.declare_parameter('height_offset_m', 0.40)       # Z轴高度补偿/袋子高度（米）
-        self.declare_parameter('approach_offset_m', 0.12)     # 接近偏移量/末端执行器长度（米）
+        self.declare_parameter('basket_offset_m', -0.08)      # 向标记深处偏移/篮子宽度（米）
+        self.declare_parameter('height_offset_m', 0.45)       # Z轴高度补偿/袋子高度（米）
+        self.declare_parameter('approach_offset_m', 0.08)     # 接近偏移量/末端执行器长度（米）
         self.declare_parameter('gripper_open_gap', 0.035)     # 夹爪开距半宽（米）
         self.declare_parameter('max_processing_retries', 5)   # 最大重试次数
         self.declare_parameter('retry_interval_sec', 0.5)     # 重试间隔（秒）
@@ -69,7 +69,18 @@ class CoffeeDropNode(Node):
         # 手眼矩阵
         he_vals = self.get_parameter('hand_eye_matrix').value
         self.T_cam_in_arm = np.array(he_vals, dtype=np.float32).reshape(4, 4)
-        
+
+        self.MAX_ADJUST_TIME = 10.0  # 最大调整时间（秒）
+        self.ADJUST_INTERVAL = 0.3   # 调整间隔（秒）
+        self.VX_ADJUST = 0.12        # x方向调整速度（m/s）
+        self.VY_ADJUST = 0.10        # y方向调整速度（m/s）
+        self.VZ_ADJUST = 0.30
+        self.X_THRESHOLD = 0.48      # x阈值（米）
+        self.Y_THRESHOLD = 0.08      # y阈值（米）
+        self.YAW_THRESHOLD = np.radians(5)  # 朝向阈值（弧度）
+        self.YAW_TARGET = np.radians(90)    # 目标朝向（弧度）
+
+
         # ===== ROS 接口 =====
         self.bridge = CvBridge()
         self.grasp_pub = self.create_publisher(PoseStamped, '/my_pose_cmd', 10)
@@ -144,8 +155,6 @@ class CoffeeDropNode(Node):
                 self.get_logger().error(f"❌ 缺少必需标记: {missing} (检测到: {detected_ids})")
                 return None, None
             
-            self.get_logger().info(f"✓ 检测到必需标记: {self.required_markers}")
-            
             # ===== 2. 求解每个标记位姿 =====
             marker_size_m = self.marker_size_mm / 1000.0
             obj_points = np.array([
@@ -204,9 +213,9 @@ class CoffeeDropNode(Node):
             R_arm = self.T_cam_in_arm[:3, :3] @ R_avg
             t_arm = midpoint_arm[:3]
             
-            # 夹爪朝向校正：绕Y轴旋转60°（使夹爪倾斜朝下）
-            r_y_60 = R_scipy.from_euler('y', 60, degrees=True).as_matrix()
-            R_arm_corrected = r_y_60 @ R_arm
+            # 夹爪朝向校正：绕Y轴旋转30°（使夹爪倾斜朝下）
+            r_y_30 = R_scipy.from_euler('y', 30, degrees=True).as_matrix()
+            R_arm_corrected = r_y_30 @ R_arm
             quat_arm = R_scipy.from_matrix(R_arm_corrected).as_quat()
             
             # 高度补偿 + 接近偏移
@@ -250,11 +259,11 @@ class CoffeeDropNode(Node):
         msg = Twist()
         msg.linear.x = vx
         msg.linear.y = vy
-        msg.linear.z = vz
-        # 角速度全部设为0（不考虑自转）
+        msg.linear.z = 0.0
+
         msg.angular.x = 0.0
         msg.angular.y = 0.0
-        msg.angular.z = 0.0
+        msg.angular.z = vz
         self.cmd_vel_pub.publish(msg)
 
     def wait_for_frames(self, timeout_sec=3.0):
@@ -268,21 +277,14 @@ class CoffeeDropNode(Node):
                 return frame
         return None
 
-    def adjust_base_position(self, initial_position):
+    def adjust_base_position(self, initial_position, yaw):
         """
         调整小车位置使目标点满足: x < 0.48m 且 |y| < 0.03m
         返回调整后的最新位姿 (position, quaternion)
         """
-        self.get_logger().info("🔄 开始小车位置调整（目标: x<0.48m, |y|<0.03m）...")
         
         # 调整参数（硬编码，暂不放入参数服务器）
-        MAX_ADJUST_TIME = 10.0  # 最大调整时间（秒）
-        ADJUST_INTERVAL = 0.3   # 调整间隔（秒）
-        VX_ADJUST = 0.12        # x方向调整速度（m/s）
-        VY_ADJUST = 0.10        # y方向调整速度（m/s）
-        X_THRESHOLD = 0.48      # x阈值（米）
-        Y_THRESHOLD = 0.03      # y阈值（米）
-        
+       
         start_time = time.time()
         last_adjust_time = 0.0
         position = initial_position.copy()
@@ -299,32 +301,36 @@ class CoffeeDropNode(Node):
         if position is None or quaternion is None:
             self.get_logger().warn("⚠️ 初始位姿计算失败")
             return initial_position, None
-        
+        yaw = self.get_base_yaw(quaternion)
+
         # 调整循环
-        while (time.time() - start_time) < MAX_ADJUST_TIME:
+        while (time.time() - start_time) < self.MAX_ADJUST_TIME:
             # 检查是否满足条件
-            if position[0] < X_THRESHOLD and abs(position[1]) < Y_THRESHOLD:
+            if position[0] < self.X_THRESHOLD and abs(position[1]) < self.Y_THRESHOLD and abs(self.YAW_TARGET - yaw) < self.YAW_THRESHOLD:
                 self.get_logger().info(
-                    f"✅ 位置调整完成: x={position[0]:.3f}m (<{X_THRESHOLD}m), "
-                    f"y={position[1]:.3f}m (|y|<{Y_THRESHOLD}m)"
+                    f"✅ 位置调整完成: x={position[0]:.3f}m (<{self.X_THRESHOLD}m), "
+                    f"y={position[1]:.3f}m (|y|<{self.Y_THRESHOLD}m), "
+                    f"yaw={np.degrees(yaw):.2f}° "
                 )
-                self.publish_cmd_vel(0.0, 0.0)  # 停止小车
+                self.publish_cmd_vel(0.0, 0.0, 0.0)  # 停止小车
                 return position, quaternion
             
             # 计算调整速度
-            vx = VX_ADJUST if position[0] >= X_THRESHOLD else 0.0
-            vy = VY_ADJUST if position[1] > Y_THRESHOLD else (-VY_ADJUST if position[1] < -Y_THRESHOLD else 0.0)
+            vx = self.VX_ADJUST if position[0] >= self.X_THRESHOLD else 0.0
+            vy = self.VY_ADJUST if position[1] > self.Y_THRESHOLD else (-self.VY_ADJUST if position[1] < -self.Y_THRESHOLD else 0.0)
+            vz = self.VZ_ADJUST if self.YAW_TARGET - yaw >= self.YAW_THRESHOLD else (-self.VZ_ADJUST if self.YAW_TARGET - yaw <= -self.YAW_THRESHOLD else 0.0)
             
             # 仅当需要调整时才发布速度命令
-            if vx != 0.0 or vy != 0.0:
-                self.publish_cmd_vel(vx, vy)
+            if vx != 0.0 or vy != 0.0 or vz != 0.0:
+                self.publish_cmd_vel(vx, vy, vz)
                 self.get_logger().debug(
-                    f"🔧 调整中: x={position[0]:.3f}m (target<{X_THRESHOLD}m) → vx={vx:.2f}m/s, "
-                    f"y={position[1]:.3f}m (target|y|<{Y_THRESHOLD}m) → vy={vy:.2f}m/s"
+                    f"🔧 调整中: x={position[0]:.3f}m, vx={vx:.2f}m/s, "
+                    f"y={position[1]:.3f}m, vy={vy:.2f}m/s, "
+                    f"yaw={np.degrees(self.YAW_TARGET - yaw):.2f}°, vz={vz:.2f}rad/s"
                 )
             
             # 等待调整间隔
-            time.sleep(ADJUST_INTERVAL)
+            time.sleep(self.ADJUST_INTERVAL)
             
             # 获取新帧并重新计算位姿
             frame = self.wait_for_frames(timeout_sec=1.0)
@@ -342,12 +348,25 @@ class CoffeeDropNode(Node):
             quaternion = new_quat
         
         # 超时处理
-        self.publish_cmd_vel(0.0, 0.0)  # 确保停止小车
+        self.publish_cmd_vel(0.0, 0.0, 0.0)  # 确保停止小车
         self.get_logger().warn(
-            f"⚠️ 小车调整超时 ({MAX_ADJUST_TIME}s)，当前位姿: "
+            f"⚠️ 小车调整超时 ({self.MAX_ADJUST_TIME}s)，当前位姿: "
             f"x={position[0]:.3f}m, y={position[1]:.3f}m"
         )
         return position, quaternion
+    
+    def get_base_yaw(self, quaternion):
+        """
+        从四元数获取小车朝向（yaw，单位：弧度）
+        quaternion: [x, y, z, w]
+        """
+        x, y, z, w = quaternion
+        # yaw = arctan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+        return yaw
 
     def execute_drop_sequence(self):
         """完整放置流程（带重试和小车调整）"""
@@ -373,15 +392,17 @@ class CoffeeDropNode(Node):
                 self.get_logger().warn("⚠️ 位姿计算失败，重试...")
                 time.sleep(self.retry_interval)
                 continue
-            
+
+            yaw = self.get_base_yaw(quaternion)
+            self.get_logger().info(f"🧭 计算得到小车朝向 (yaw={np.degrees(yaw):.2f}°)")
+
             # ===== 新增：小车位置调整 =====
-            # 检查是否需要调整（x >= 0.48m 或 |y| >= 0.05m）
-            if position[0] >= 0.48 or abs(position[1]) >= 0.05:
+            if position[0] >= self.X_THRESHOLD or abs(position[1]) >= self.Y_THRESHOLD or abs(self.YAW_TARGET - yaw) >= self.YAW_THRESHOLD:
                 self.get_logger().info(
-                    f"⚠️ 目标点超出阈值 (x={position[0]:.3f}m ≥ 0.48m or |y|={abs(position[1]):.3f}m ≥ 0.05m)，"
+                    f"⚠️ 目标点超出阈值 (x={position[0]:.3f}m ≥ {self.X_THRESHOLD}m or |y|={abs(position[1]):.3f}m ≥ {self.Y_THRESHOLD}m) |yaw|={abs(self.YAW_TARGET - yaw):.2f} ≥ {self.YAW_THRESHOLD:.2f}，"
                     "启动小车平移调整..."
                 )
-                position, quaternion = self.adjust_base_position(position)
+                position, quaternion = self.adjust_base_position(position, yaw)
                 
                 # 调整后再次检查位姿有效性
                 if position is None or quaternion is None:
@@ -398,25 +419,32 @@ class CoffeeDropNode(Node):
             
             # 成功：执行放置动作
             self.publish_pose(position, quaternion)
-            
-            # 等待机械臂到位
             self.get_logger().info("⏳ 等待机械臂移动到位（3秒）...")
-            time.sleep(3.0)
+            time.sleep(5.0)
 
+            # put pos z -10cm y轴旋转30度
+            put_position = position.copy()
+            put_position[2] -= 0.10
+            r_y_30 = R_scipy.from_euler('y', 30, degrees=True).as_matrix()
+            q_rotated = R_scipy.from_matrix(r_y_30 @ R_scipy.from_quat(quaternion).as_matrix()).as_quat()
+            self.publish_pose(put_position, q_rotated)
+            self.get_logger().info("⏳ 等待机械臂下降（2秒）...")
+            time.sleep(2.0)
+
+            # 打开夹爪放置咖啡袋
             self.publish_gripper(self.gripper_open_gap)
             self.get_logger().info("⏳ 等待夹爪动作完成（2秒）...")
             time.sleep(2.0)
-
             self.get_logger().info("🎉 咖啡袋放置流程完成！")
-
-            # 关闭夹爪
-            self.publish_gripper(gap=0.0)
-            time.sleep(2.0)
 
             # 回到提起物体姿势
             pe = np.array([-0.025252, -0.005776, 0.413126])
             qe = np.array([-0.5042411323427093, 0.5062575028431882, -0.5180797264523359, 0.4701463796604143])
             self.publish_pose(pe, qe)
+
+            # 关闭夹爪
+            self.publish_gripper(gap=0.0)
+            time.sleep(2.0)
 
             return True
         
@@ -444,7 +472,7 @@ def main(args=None):
     finally:
         # 确保小车停止
         try:
-            node.publish_cmd_vel(0.0, 0.0)
+            node.publish_cmd_vel(0.0, 0.0, 0.0)
             time.sleep(0.1)  # 确保停止命令发出
         except:
             pass

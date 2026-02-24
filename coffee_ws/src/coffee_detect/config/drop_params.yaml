@@ -19,8 +19,8 @@ coffee_drop:
     # === 任务几何参数 (关键!) ===
     # 注：所有单位均为米(m)，正负方向需结合手眼矩阵验证
     basket_offset_m: -0.09         # 沿标记Z轴向"深处"偏移量 (篮子中心深度补偿)
-    height_offset_m: 0.40          # 机械臂Z轴高度补偿 (袋子底部到篮子底部)
-    approach_offset_m: 0.12        # 沿夹爪Z轴负方向接近偏移 (避免碰撞篮子边缘)
+    height_offset_m: 0.46          # 机械臂Z轴高度补偿 (袋子底部到篮子底部)
+    approach_offset_m: 0.1        # 沿夹爪Z轴负方向接近偏移
     
     # === 夹爪控制参数 ===
     gripper_open_gap: 0.035        # 夹爪半开距 (米) - 实际开合宽度 = 2 * gap
