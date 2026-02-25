@@ -20,6 +20,10 @@
 ![grasp coffee demo](coffee_ws/src/coffee_detect/coffeetest/img/VID_20260122_161541.gif)  
 *抓取演示动画（2倍速）：机械臂根据检测到的咖啡袋位姿，自主完成接近、夹取与提起。*
 
+![put](coffee_ws/src/coffee_detect/coffeetest/demo/put.gif)
+
+![align](coffee_ws/src/coffee_detect/coffeetest/demo/align.gif)
+
 ---
 
 

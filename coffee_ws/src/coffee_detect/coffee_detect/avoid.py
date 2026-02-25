@@ -8,7 +8,7 @@ import numpy as np
 
 class PointCloudOmniAvoidance(Node):
     def __init__(self):
-        super().__init__('pointcloud_omni_avoidance')
+        super().__init__('pc_avoid')
         
         # ================= 小车尺寸参数 =================
         self.declare_parameter('car_length', 0.72)    # 车长 (米)
@@ -23,10 +23,10 @@ class PointCloudOmniAvoidance(Node):
         self.radar_offset_x = self.get_parameter('radar_offset_x').value
         
         # ================= 安全距离 (车体边缘 + 缓冲) =================
-        self.declare_parameter('safe_buffer_front', 0.05)   # 前方缓冲
-        self.declare_parameter('safe_buffer_back', 0.05)    # 后方缓冲
-        self.declare_parameter('safe_buffer_side', 0.05)    # 侧方缓冲
-        self.declare_parameter('safe_buffer_rotate', 0.01)  # 旋转缓冲
+        self.declare_parameter('safe_buffer_front', 0.1)   # 前方缓冲
+        self.declare_parameter('safe_buffer_back', 0.1)    # 后方缓冲
+        self.declare_parameter('safe_buffer_side', 0.1)    # 侧方缓冲
+        self.declare_parameter('safe_buffer_rotate', -0.08)  # 旋转缓冲
         
         # 计算实际安全距离
         self.safe_front = self.half_length + self.get_parameter('safe_buffer_front').value
@@ -141,7 +141,7 @@ class PointCloudOmniAvoidance(Node):
         
         # 1. 获取各方向障碍物距离
         dist_front, dist_back, dist_left, dist_right = self.get_obstacle_distances()
-        print(f'F:{dist_front:.2f}, L:{dist_left:.2f}, R:{dist_right:.2f}, B:{dist_back:.2f}')
+        self.get_logger().info(f'F:{dist_front:.2f}, L:{dist_left:.2f}, R:{dist_right:.2f}, B:{dist_back:.2f}')
         # 2. 输出速度初始化
         output_cmd = Twist()
         
