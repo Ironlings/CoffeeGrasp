@@ -21,8 +21,10 @@
 *抓取演示动画（2倍速）：机械臂根据检测到的咖啡袋位姿，自主完成接近、夹取与提起。*
 
 ![put](coffee_ws/src/coffee_detect/coffeetest/demo/put.gif)
+*交接演示：机械臂与小车协作，根据检测到的ArUco标记，自主完成接近并放下咖啡。*
 
 ![align](coffee_ws/src/coffee_detect/coffeetest/demo/align.gif)
+*对齐电梯面板演示：小车通过机械臂上摄像头识别电梯面板并靠近，使机械臂能够按到按钮。*
 
 ---
 
