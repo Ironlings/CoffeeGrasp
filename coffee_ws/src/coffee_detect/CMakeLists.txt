@@ -30,6 +30,7 @@ install(PROGRAMS
   coffee_detect/coffee.py
   coffee_detect/drop.py
   coffee_detect/avoid.py
+  coffee_detect/move2panel.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

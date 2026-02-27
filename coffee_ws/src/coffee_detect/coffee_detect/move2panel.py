@@ -55,10 +55,7 @@ class ControlPanelFollower(Node):
         self.ts.registerCallback(self.frame_callback)
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        from moveit_msgs.srv import GetPositionIK
-        self.cli_ik = self.create_client(GetPositionIK, '/compute_ik')
-        from trajectory_msgs.msg import JointTrajectory
-        self.pub_traj = self.create_publisher(JointTrajectory, '/arm_controller/joint_trajectory', 10)
+        #self.grasp_pub = self.create_publisher(PoseStamped, '/my_pose_cmd', 10)
         from std_msgs.msg import Bool
         self.arrived_pub = self.create_publisher(Bool, '/panel_arive', 1)
 
@@ -136,7 +133,7 @@ class ControlPanelFollower(Node):
             linear_x = np.clip(self.kp_linear * x_err, -self.max_linear, self.max_linear)
         else:
             linear_x = 0.0
-        if abs(y_err) > 0.02:
+        if abs(y_err) > 0.01:
             linear_y = np.clip(self.kp_y * y_err, -self.max_linear, self.max_linear)
         else:
             linear_y = 0.0
@@ -162,76 +159,35 @@ class ControlPanelFollower(Node):
             msg.data = True
             self.arrived_pub.publish(msg)
             self.get_logger().info("Reached target, notified elevator button node.")
-            self.create_timer(1.0, rclpy.shutdown)
 
-    def publish_pos(self, position, quaternion):
-        from moveit_msgs.msg import PositionIKRequest
-        from moveit_msgs.srv import GetPositionIK
-        from geometry_msgs.msg import PoseStamped
-        import time
+            rclpy.shutdown()
 
-        pose = PoseStamped()
-        pose.header.frame_id = "base_link"
-        pose.header.stamp = self.get_clock().now().to_msg()
-        pose.pose.position.x = float(position[0])
-        pose.pose.position.y = float(position[1])
-        pose.pose.position.z = float(position[2])
-        pose.pose.orientation.x = float(quaternion[0])
-        pose.pose.orientation.y = float(quaternion[1])
-        pose.pose.orientation.z = float(quaternion[2])
-        pose.pose.orientation.w = float(quaternion[3])
+    # def publish_pos(self, position, quaternion):
+    #         # --- Publish ---
+    #         grasp_msg = PoseStamped()
+    #         grasp_msg.header.stamp = self.get_clock().now().to_msg()
+    #         grasp_msg.header.frame_id = "base_link"
+    #         grasp_msg.pose.position.x = float(position[0])
+    #         grasp_msg.pose.position.y = float(position[1])
+    #         grasp_msg.pose.position.z = float(position[2])
+    #         grasp_msg.pose.orientation.x = float(quaternion[0])
+    #         grasp_msg.pose.orientation.y = float(quaternion[1])
+    #         grasp_msg.pose.orientation.z = float(quaternion[2])
+    #         grasp_msg.pose.orientation.w = float(quaternion[3])
 
-        if not self.cli_ik.wait_for_service(timeout_sec=2.0):
-             self.get_logger().error("IK service /compute_ik not available!")
-             return
-
-        req = PositionIKRequest()
-        req.group_name = "arm"
-        req.pose_stamped = pose
-        req.avoid_collisions = True
-
-        future = self.cli_ik.call_async(GetPositionIK.Request(ik_request=req))
-        rclpy.spin_until_future_complete(self, future)
-        resp = future.result()
-        
-        if resp and resp.error_code.val == 1:
-            from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-            from builtin_interfaces.msg import Duration
-            
-            joint_state = resp.solution.joint_state
-            goal_joints = dict(zip(joint_state.name, joint_state.position))
-            
-            traj = JointTrajectory()
-            traj.header.stamp = self.get_clock().now().to_msg()
-            valid_joints = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
-            final_joints = {k: v for k, v in goal_joints.items() if k in valid_joints}
-            if len(final_joints) != 6: 
-                self.get_logger().error("IK failed to return all 6 joints.")
-                return
-
-            traj.joint_names = valid_joints
-            point = JointTrajectoryPoint()
-            point.positions = [final_joints[name] for name in valid_joints]
-            duration = 4.0
-            point.time_from_start = Duration(sec=int(duration), nanosec=int((duration % 1)*1e9))
-            traj.points = [point]
-            
-            # small delay to ensure publisher connects
-            time.sleep(1.0)
-            self.pub_traj.publish(traj)
-            self.get_logger().info("IK computed via MoveIt (TRAC-IK). Trajectory published to arm_controller.")
-        else:
-            err_val = resp.error_code.val if resp else "timeout/fail"
-            self.get_logger().error(f"IK failed! Error code: {err_val}")
+    #         self.grasp_pub.publish(grasp_msg)
+    #         self.get_logger().info(f"Pose published: "
+    #                                f"xyz = {position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}, "
+    #                                f"xyzw = {quaternion[0]:.3f}, {quaternion[1]:.3f}, {quaternion[2]:.3f}, {quaternion[3]:.3f}")
 
 def main(args=None):
     rclpy.init(args=args)
     node = ControlPanelFollower()
 
-    p = np.array([-0.13984, -0.0006, 0.436492])
-    q = np.array([0.0071732650039771015, 0.637345889369954, 0.003499715255773396, 0.7705365102093046])
+    # p = np.array([-0.13984, -0.0006, 0.436492])
+    # q = np.array([0.0071732650039771015, 0.637345889369954, 0.003499715255773396, 0.7705365102093046])
  
-    node.publish_pos(p,q)
+    # node.publish_pos(p,q)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
