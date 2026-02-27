@@ -12,12 +12,6 @@ import torch
 from ultralytics.models.sam import SAM3SemanticPredictor
 import time
 
-# IK and Trajectory imports
-from moveit_msgs.srv import GetPositionIK
-from moveit_msgs.msg import PositionIKRequest
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from builtin_interfaces.msg import Duration
-
 class ControlPanelFollower(Node):
     def __init__(self):
         super().__init__('control_panel_follower_tf')
@@ -61,12 +55,10 @@ class ControlPanelFollower(Node):
         self.ts.registerCallback(self.frame_callback)
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        # Replacing old PoseStamped publisher with Trajectory Publisher
-        self.pub_traj = self.create_publisher(JointTrajectory, '/arm_controller/joint_trajectory', 10)
-        
-        # IK Service Client
+        from moveit_msgs.srv import GetPositionIK
         self.cli_ik = self.create_client(GetPositionIK, '/compute_ik')
-        
+        from trajectory_msgs.msg import JointTrajectory
+        self.pub_traj = self.create_publisher(JointTrajectory, '/arm_controller/joint_trajectory', 10)
         from std_msgs.msg import Bool
         self.arrived_pub = self.create_publisher(Bool, '/panel_arive', 1)
 
@@ -173,80 +165,64 @@ class ControlPanelFollower(Node):
             self.create_timer(1.0, rclpy.shutdown)
 
     def publish_pos(self, position, quaternion):
-            # --- TRAC-IK Execution ---
-            self.get_logger().info(f"Target Pose: "
-                                   f"xyz = {position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}, "
-                                   f"xyzw = {quaternion[0]:.3f}, {quaternion[1]:.3f}, {quaternion[2]:.3f}, {quaternion[3]:.3f}")
+        from moveit_msgs.msg import PositionIKRequest
+        from moveit_msgs.srv import GetPositionIK
+        from geometry_msgs.msg import PoseStamped
+        import time
+
+        pose = PoseStamped()
+        pose.header.frame_id = "base_link"
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.pose.position.x = float(position[0])
+        pose.pose.position.y = float(position[1])
+        pose.pose.position.z = float(position[2])
+        pose.pose.orientation.x = float(quaternion[0])
+        pose.pose.orientation.y = float(quaternion[1])
+        pose.pose.orientation.z = float(quaternion[2])
+        pose.pose.orientation.w = float(quaternion[3])
+
+        if not self.cli_ik.wait_for_service(timeout_sec=2.0):
+             self.get_logger().error("IK service /compute_ik not available!")
+             return
+
+        req = PositionIKRequest()
+        req.group_name = "arm"
+        req.pose_stamped = pose
+        req.avoid_collisions = True
+
+        future = self.cli_ik.call_async(GetPositionIK.Request(ik_request=req))
+        rclpy.spin_until_future_complete(self, future)
+        resp = future.result()
+        
+        if resp and resp.error_code.val == 1:
+            from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+            from builtin_interfaces.msg import Duration
             
-            # Construct Target PoseStamped
-            target_pose = PoseStamped()
-            target_pose.header.stamp = self.get_clock().now().to_msg()
-            target_pose.header.frame_id = "base_link"
-            target_pose.pose.position.x = float(position[0])
-            target_pose.pose.position.y = float(position[1])
-            target_pose.pose.position.z = float(position[2])
-            target_pose.pose.orientation.x = float(quaternion[0])
-            target_pose.pose.orientation.y = float(quaternion[1])
-            target_pose.pose.orientation.z = float(quaternion[2])
-            target_pose.pose.orientation.w = float(quaternion[3])
-
-            if not self.cli_ik.wait_for_service(timeout_sec=2.0):
-                 self.get_logger().error("IK service /compute_ik not available")
-                 return False
-
-            req = PositionIKRequest()
-            req.group_name = "arm"
-            req.pose_stamped = target_pose
-            req.avoid_collisions = True
-
-            self.get_logger().info("Calling /compute_ik service...")
-            future = self.cli_ik.call_async(GetPositionIK.Request(ik_request=req))
+            joint_state = resp.solution.joint_state
+            goal_joints = dict(zip(joint_state.name, joint_state.position))
             
-            # Since this might be called from a callback, we have to wait without blocking rclpy spin
-            # Using simple polling
-            while not future.done():
-                time.sleep(0.01)
+            traj = JointTrajectory()
+            traj.header.stamp = self.get_clock().now().to_msg()
+            valid_joints = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+            final_joints = {k: v for k, v in goal_joints.items() if k in valid_joints}
+            if len(final_joints) != 6: 
+                self.get_logger().error("IK failed to return all 6 joints.")
+                return
 
-            resp = future.result()
+            traj.joint_names = valid_joints
+            point = JointTrajectoryPoint()
+            point.positions = [final_joints[name] for name in valid_joints]
+            duration = 4.0
+            point.time_from_start = Duration(sec=int(duration), nanosec=int((duration % 1)*1e9))
+            traj.points = [point]
             
-            if resp.error_code.val == 1: # SUCCESS
-                 self.get_logger().info("IK Computed Successfully. Executing trajectory...")
-                 goal_joints = {}
-                 for i, name in enumerate(resp.solution.joint_state.name):
-                     goal_joints[name] = resp.solution.joint_state.position[i]
-                     
-                 # Construct and publish Trajectory
-                 traj = JointTrajectory()
-                 traj.header.stamp = self.get_clock().now().to_msg()
-                 
-                 valid_joints = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
-                 final_joints = {}
-                 for name in valid_joints:
-                     if name in goal_joints:
-                         final_joints[name] = goal_joints[name]
-                     else:
-                         self.get_logger().error(f"IK solution missing joint: {name}")
-                         return False
-                         
-                 traj.joint_names = valid_joints
-                 point = JointTrajectoryPoint()
-                 point.positions = [final_joints[name] for name in valid_joints]
-                 
-                 # Set fixed duration (e.g. 4 seconds)
-                 duration = 4.0
-                 point.time_from_start = Duration(sec=int(duration), nanosec=int((duration % 1)*1e9))
-                 traj.points = [point]
-                 
-                 self.pub_traj.publish(traj)
-                 self.get_logger().info("Trajectory published. Waiting for execution...")
-                 
-                 # Wait for physical execution
-                 time.sleep(duration + 0.5)
-                 return True
-                 
-            else:
-                 self.get_logger().error(f"IK Failed with error code: {resp.error_code.val} (Make sure target is reachable)")
-                 return False
+            # small delay to ensure publisher connects
+            time.sleep(1.0)
+            self.pub_traj.publish(traj)
+            self.get_logger().info("IK computed via MoveIt (TRAC-IK). Trajectory published to arm_controller.")
+        else:
+            err_val = resp.error_code.val if resp else "timeout/fail"
+            self.get_logger().error(f"IK failed! Error code: {err_val}")
 
 def main(args=None):
     rclpy.init(args=args)
