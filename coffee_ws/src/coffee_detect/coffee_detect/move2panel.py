@@ -23,11 +23,11 @@ class ControlPanelFollower(Node):
         self.declare_parameter('camera_cx', 316.89483642578125)
         self.declare_parameter('camera_cy', 209.28350830078125)
         self.declare_parameter('target_distance', 0.65)
-        self.declare_parameter('kp_linear', 1.5)
-        self.declare_parameter('kp_y', 0.5)
-        self.declare_parameter('kp_angular', 0.3)
-        self.declare_parameter('max_linear', 0.3)
-        self.declare_parameter('max_angular', 0.3)
+        self.declare_parameter('kp_linear', 1.0)
+        self.declare_parameter('kp_y', 1.0)
+        self.declare_parameter('kp_angular', 1.0)
+        self.declare_parameter('max_linear', 0.5)
+        self.declare_parameter('max_angular', 0.5)
         self.declare_parameter('handeye_pos', [-0.07482322180223497, 0.00623968754635619, 0.050192986145776636])
         self.declare_parameter('handeye_quat', [-0.1197419547833481, 0.12550407599676805, -0.7127657428175671, 0.6796142928445386])
 
@@ -129,15 +129,15 @@ class ControlPanelFollower(Node):
         # 控制 law
         x_err = pos_base[0] - self.target_distance  # 前进方向
         y_err = pos_base[1]                    # 横向偏差，正向对应小车右侧
-        if x_err > 0.03:
+        if abs(x_err) > 0.02:
             linear_x = np.clip(self.kp_linear * x_err, -self.max_linear, self.max_linear)
         else:
             linear_x = 0.0
-        if abs(y_err) > 0.01:
+        if abs(y_err) > 0.02:
             linear_y = np.clip(self.kp_y * y_err, -self.max_linear, self.max_linear)
         else:
             linear_y = 0.0
-        if abs(angle_err) > 0.1:
+        if abs(angle_err) > 0.02:
             angular_z = np.clip(self.kp_angular * angle_err, -self.max_angular, self.max_angular)
         else:
             angular_z = 0.0

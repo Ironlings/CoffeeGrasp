@@ -13,10 +13,10 @@ export LC_NUMERIC=en_US.UTF-8
 
 # === 3. 并行启动其他终端（无需等待）===
 
-gnome-terminal --title="ORBBEC Camera 335L" -- bash -c "
-    ros2 launch orbbec_camera gemini_330_series.launch.py usb_port:=2-8 color_width:=1280 color_height:=800 color_fps:=30 depth_width:=1280 depth_height:=800 depth_fps:=30;
-    exec bash
-"
+# gnome-terminal --title="ORBBEC Camera 335L" -- bash -c "
+#     ros2 launch orbbec_camera gemini_330_series.launch.py usb_port:=2-8 color_width:=1280 color_height:=800 color_fps:=30 depth_width:=1280 depth_height:=800 depth_fps:=30;
+#     exec bash
+# "
 gnome-terminal --title="CAN & Ranger" -- bash -c "
   sudo ip link set can_agv down 2>/dev/null;
   sudo ip link set can_agv type can bitrate 500000;

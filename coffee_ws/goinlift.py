@@ -66,8 +66,8 @@ class MotionCommander(Node):
         self.declare_parameter('back_target_dist', 0.50)
 
         # 控制参数
-        self.declare_parameter('kp_right_dist', 0.5)
-        self.declare_parameter('kp_right_angle', 0.5)
+        self.declare_parameter('kp_right_dist', 0.4)
+        self.declare_parameter('kp_right_angle', 0.4)
         self.declare_parameter('kp_back_dist', 0.8)
         self.declare_parameter('kp_back_angle', 0.5)
 
@@ -79,7 +79,7 @@ class MotionCommander(Node):
         self.declare_parameter('min_plane_points', 50)
         self.declare_parameter('plane_thresh', 0.03)
 
-        self.get_logger().info("运动控制 +3D 精准停车节点启动喵 ✨")
+        self.get_logger().info("运动控制 +3D 精准停车节点启动 ✨")
 
     # ================= ODOM 回调 =================
     def odom_callback(self, msg):
@@ -195,7 +195,7 @@ class MotionCommander(Node):
         # 停止
         self.pub_cmd.publish(Twist())
         duration = time.time() - start_time
-        self.get_logger().info(f"移动完成，用时 {duration:.3f} 秒 喵")
+        self.get_logger().info(f"移动完成，用时 {duration:.3f} 秒 ")
         time.sleep(0.5)
 
     def rotate(self, speed, angle_rad):
@@ -226,13 +226,13 @@ class MotionCommander(Node):
         while rclpy.ok():
             rclpy.spin_once(self)
             if self.yolo_state == "open":
-                self.get_logger().info("检测到 open，继续执行喵 ✨")
+                self.get_logger().info("检测到 open，继续执行 ✨")
                 break
             time.sleep(0.05)
 
     # ================= 3D 雷达精准停车 (右墙 + 后墙) =================
     def lidar_park(self):
-        self.get_logger().info("开始 3D 雷达精准停车 (右墙) 喵~")
+        self.get_logger().info("开始 3D 雷达精准停车 (右墙) ~")
         self.parking_mode = True
         
         # ================= 阶段控制状态 =================
@@ -290,7 +290,7 @@ class MotionCommander(Node):
                 if converge_count >= required_frames:
                     phase = 2
                     converge_count = 0
-                    self.get_logger().info("✓ 角度对齐完成，进入距离对齐阶段 喵~")
+                    self.get_logger().info("✓ 角度对齐完成，进入距离对齐阶段 ~")
 
             # ================= 阶段 2: 再平移对齐距离 =================
             elif phase == 2:
@@ -319,7 +319,7 @@ class MotionCommander(Node):
                 # 距离稳定 5 帧后完成
                 if converge_count >= required_frames:
                     phase = 3
-                    self.get_logger().info('✓ 右墙精准停车完成喵！')
+                    self.get_logger().info('✓ 右墙精准停车完成！')
                     break
 
             # ================= 阶段 3: 完成 =================
@@ -338,7 +338,7 @@ class MotionCommander(Node):
         self.pub_cmd.publish(Twist())
         self.parking_mode = False
         duration = time.time() - start_time
-        self.get_logger().info(f"停车总用时：{duration:.2f} 秒 喵~")
+        self.get_logger().info(f"停车总用时：{duration:.2f} 秒 ~")
 
     # =====================================================
     # 工具函数 (来自 WallFollower)
