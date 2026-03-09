@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sensor_msgs.msg import PointCloud2
 import math
 import time
@@ -25,20 +25,23 @@ class MotionCommander(Node):
         )
         # 新增：雷达订阅
         self.pc_sub = self.create_subscription(
-            PointCloud2, '/livox/lidar2', self.pc_callback, 10
+            PointCloud2, '/livox/lidar', self.pc_callback, 10
         )
-
+        self.sub_panel_aligned = self.create_subscription(
+            Bool, '/panel_arive', self.pa_callback, 1
+        )
         # ================= 状态变量 =================
         self.current_x = 0.0
         self.current_y = 0.0
         self.current_yaw = 0.0
         self.odom_ready = False
         self.yolo_state = ""
+        self.panel_aligned = False
         
         # 雷达停车状态
         self.lidar_data = {
             'right_dist': None, 'right_angle': None,
-            'back_dist': None, 'back_angle': None
+            'front_dist': None, 'front_angle': None
         }
         self.parking_converged = False
 
@@ -46,30 +49,30 @@ class MotionCommander(Node):
 
         # ================= 参数声明 (来自 WallFollower) =================
         # 右墙区域 (Y 轴负方向)
-        self.declare_parameter('right_x_min', 0.0)
-        self.declare_parameter('right_x_max', 1.0)
-        self.declare_parameter('right_y_min', -2.0)
-        self.declare_parameter('right_y_max', -0.25)
+        self.declare_parameter('right_x_min', -1.0)
+        self.declare_parameter('right_x_max', 0.0)
+        self.declare_parameter('right_y_min', -3.0)
+        self.declare_parameter('right_y_max', -0.26)
 
-        # 后墙区域 (X 轴负方向，原为前墙)
-        self.declare_parameter('back_x_min', -2.0)
-        self.declare_parameter('back_x_max', -0.1)
-        self.declare_parameter('back_y_min', -0.3)
-        self.declare_parameter('back_y_max', 0.3)
+        # 前墙区域 (X 轴正方向)
+        self.declare_parameter('front_x_min', 0.1)
+        self.declare_parameter('front_x_max', 3.0)
+        self.declare_parameter('front_y_min', -0.3)
+        self.declare_parameter('front_y_max', 0.3)
 
         # 高度
-        self.declare_parameter('z_min', 0.1)
+        self.declare_parameter('z_min', -0.50)
         self.declare_parameter('z_max', 1.5)
 
         # 目标距离
         self.declare_parameter('right_target_dist', 0.36)
-        self.declare_parameter('back_target_dist', 0.50)
+        self.declare_parameter('front_target_dist', 0.650)
 
         # 控制参数
         self.declare_parameter('kp_right_dist', 0.4)
         self.declare_parameter('kp_right_angle', 0.4)
-        self.declare_parameter('kp_back_dist', 0.8)
-        self.declare_parameter('kp_back_angle', 0.5)
+        self.declare_parameter('kp_front_dist', 0.8)
+        self.declare_parameter('kp_front_angle', 0.5)
 
         self.declare_parameter('max_vx', 0.5)
         self.declare_parameter('max_vy', 0.5)
@@ -95,6 +98,10 @@ class MotionCommander(Node):
     def yolo_callback(self, msg):
         self.yolo_state = msg.data
 
+    # ================= 面板对齐回调 =================
+    def pa_callback(self, msg):
+        self.panel_aligned = msg.data
+
     # ================= 点云回调 (只更新数据，不发布控制) =================
     def pc_callback(self, msg):
         # 如果不在停车模式，不处理以节省资源（可选优化）
@@ -110,9 +117,9 @@ class MotionCommander(Node):
         right_pts = self.extract_region(points, 'right')
         right_plane = self.fit_plane(right_pts) if len(right_pts) > min_pts else None
 
-        # 提取后墙点
-        back_pts = self.extract_region(points, 'back')
-        back_plane = self.fit_plane(back_pts) if len(back_pts) > min_pts else None
+        # 提取前墙点
+        front_pts = self.extract_region(points, 'front')
+        front_plane = self.fit_plane(front_pts) if len(front_pts) > min_pts else None
 
         # 计算右墙信息
         if right_plane is not None:
@@ -128,19 +135,19 @@ class MotionCommander(Node):
             self.lidar_data['right_dist'] = None
             self.lidar_data['right_angle'] = None
 
-        # 计算后墙信息
-        if back_plane is not None:
-            a, b, c, d = back_plane
+        # 计算前墙信息
+        if front_plane is not None:
+            a, b, c, d = front_plane
             normal = np.array([a, b, c])
             n_xy = normal[:2] / (np.linalg.norm(normal[:2]) + 1e-8)
-            target_n = np.array([1.0, 0.0]) # 后墙法向量指向前方 (墙在身后)
+            target_n = np.array([0.0, 1.0]) # 前墙法向量指向正前方
             angle_err = self.angle_error(n_xy, target_n)
             dist = abs(d / np.linalg.norm(normal))
-            self.lidar_data['back_dist'] = dist
-            self.lidar_data['back_angle'] = angle_err
+            self.lidar_data['front_dist'] = dist
+            self.lidar_data['front_angle'] = angle_err
         else:
-            self.lidar_data['back_dist'] = None
-            self.lidar_data['back_angle'] = None
+            self.lidar_data['front_dist'] = None
+            self.lidar_data['front_angle'] = None
 
     # ================= 核心移动函数 (里程计) =================
     def move(self, direction, speed, distance):
@@ -210,7 +217,6 @@ class MotionCommander(Node):
             current_yaw = self.current_yaw
 
             dyaw = target_yaw - current_yaw
-            self.get_logger().info(f"target:{target_yaw}, {current_yaw}")
             # 简单处理，实际需处理 2PI 跳变
             if abs(dyaw) < 0.02:
                 break
@@ -230,13 +236,22 @@ class MotionCommander(Node):
                 break
             time.sleep(0.05)
 
+    def wait_for_panel_align(self):
+        self.get_logger().info("等待面板对齐完成 ...")
+        while rclpy.ok():
+            rclpy.spin_once(self)
+            if self.panel_aligned:
+                self.get_logger().info("面板对齐完成，继续执行 ✨")
+                break
+            time.sleep(0.05)
+
     # ================= 3D 雷达精准停车 (右墙 + 后墙) =================
     def lidar_park(self):
         self.get_logger().info("开始 3D 雷达精准停车 (右墙) ~")
         self.parking_mode = True
         
         # ================= 阶段控制状态 =================
-        phase = 1  # 1=旋转对齐角度，2=平移对齐距离，3=完成
+        phase = 0  # 1=旋转对齐角度，2=平移对齐距离，3=完成
         converge_count = 0
         required_frames = 5
         
@@ -252,11 +267,12 @@ class MotionCommander(Node):
 
             rd = self.lidar_data['right_dist']
             ra = self.lidar_data['right_angle']
-            # bd = self.lidar_data['back_dist']  # 后墙数据暂不使用
+            fd = self.lidar_data['front_dist']  
+            print(f"Right Angle: {ra}")
             # ba = self.lidar_data['back_angle']
 
             # 如果数据丢失，停止
-            if rd is None or ra is None:
+            if rd is None or ra is None or fd is None:
                 self.get_logger().warn("雷达数据丢失，暂停停车")
                 self.pub_cmd.publish(Twist())
                 time.sleep(0.1)
@@ -265,9 +281,39 @@ class MotionCommander(Node):
 
             cmd = Twist()
             is_stable = False
+            # ================= 阶段 0: 前进对齐距离 =================
+            if phase == 0:
+                self.get_logger().info(f"阶段 0/2: 平移对齐距离 (当前：{fd:.3f}m, 目标：{self.get_parameter('front_target_dist').value:.3f}m)")
+                
+                # 右墙距离控制 (Y 轴)
+                front_target = self.get_parameter('front_target_dist').value
+                front_err = fd - front_target
+                
+                # 只控制 Y 轴平移，角速度为 0（保持已对齐的角度）
+                cmd.linear.x = self.get_parameter('kp_front_dist').value * front_err
+                cmd.linear.y = 0.0
+                cmd.angular.z = 0.0  # 保持角度，不再旋转
+                
+                # 限速
+                cmd.linear.x = np.clip(cmd.linear.x, 
+                                    -self.get_parameter('max_vx').value, 
+                                    self.get_parameter('max_vx').value)
+                
+                # 判断距离是否对齐
+                if abs(front_err) < dist_threshold:
+                    converge_count += 1
+                else:
+                    converge_count = 0
+                
+                # 距离稳定 5 帧后完成
+                if converge_count >= required_frames:
+                    phase = 1
+                    self.get_logger().info('✓ 前墙精准停车完成！')
+                    self.move('z', 0.5, 3.14)
+                    time.sleep(0.5)
 
             # ================= 阶段 1: 先旋转对齐角度 =================
-            if phase == 1:
+            elif phase == 1:
                 self.get_logger().info(f"阶段 1/2: 旋转对齐角度 (当前：{ra:.2f}°)")
                 
                 # 只控制角速度，平移速度为 0
@@ -363,11 +409,12 @@ class MotionCommander(Node):
             x_max = self.get_parameter('right_x_max').value
             y_min = self.get_parameter('right_y_min').value
             y_max = self.get_parameter('right_y_max').value
-        else: # back
-            x_min = self.get_parameter('back_x_min').value
-            x_max = self.get_parameter('back_x_max').value
-            y_min = self.get_parameter('back_y_min').value
-            y_max = self.get_parameter('back_y_max').value
+        elif side == 'front':
+            x_min = self.get_parameter('front_x_min').value
+            x_max = self.get_parameter('front_x_max').value
+            y_min = self.get_parameter('front_y_min').value
+            y_max = self.get_parameter('front_y_max').value
+
 
         mask = (
             (pts[:, 0] > x_min) & (pts[:, 0] < x_max) &
@@ -416,17 +463,18 @@ def main(args=None):
     node = MotionCommander()
 
     try:
+        # 0. 等待面板对齐完成
+        node.wait_for_panel_align()
+
         # 1. 基础移动与识别
-        #node.move('y', 0.5, 0.8)      # 左移0.8
-        #node.move('y', -0.5, -0.4)
-        # node.wait_for_open()          # 等待 YOLO
-        #node.move('x', 0.5, 1.2)      # 前进2.2
+        node.move('y', 0.5, 0.8)      # 左移0.8
+        node.wait_for_open()          # 等待 YOLO
+        node.move('x', 0.5, 2.0)      # 前进2.0
         
         # 2. 自转 180 
-        #node.move('z', 0.5, 3.14)     
+        # node.move('z', 0.5, 3.14)     
 
-        # 3. 3D 雷达精准停车 (右墙 + 后墙)
-        # 在自转之后进行控制
+        # 3. 3D 雷达精准停车 (右墙 
         node.lidar_park()
 
     except KeyboardInterrupt:

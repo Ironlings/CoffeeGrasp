@@ -23,11 +23,11 @@ class ControlPanelFollower(Node):
         self.declare_parameter('camera_cx', 316.89483642578125)
         self.declare_parameter('camera_cy', 209.28350830078125)
         self.declare_parameter('target_distance', 0.65)
-        self.declare_parameter('kp_linear', 1.0)
-        self.declare_parameter('kp_y', 1.0)
-        self.declare_parameter('kp_angular', 1.0)
-        self.declare_parameter('max_linear', 0.5)
-        self.declare_parameter('max_angular', 0.5)
+        self.declare_parameter('kp_linear', 0.50)
+        self.declare_parameter('kp_y', 0.50)
+        self.declare_parameter('kp_angular', 0.50)
+        self.declare_parameter('max_linear', 0.50)
+        self.declare_parameter('max_angular', 0.50)
         self.declare_parameter('handeye_pos', [-0.07482322180223497, 0.00623968754635619, 0.050192986145776636])
         self.declare_parameter('handeye_quat', [-0.1197419547833481, 0.12550407599676805, -0.7127657428175671, 0.6796142928445386])
 
@@ -54,7 +54,7 @@ class ControlPanelFollower(Node):
         self.ts = ApproximateTimeSynchronizer([rgb_sub, depth_sub, pose_sub], queue_size=5, slop=0.1)
         self.ts.registerCallback(self.frame_callback)
 
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_raw', 10)
         #self.grasp_pub = self.create_publisher(PoseStamped, '/my_pose_cmd', 10)
         from std_msgs.msg import Bool
         self.arrived_pub = self.create_publisher(Bool, '/panel_arive', 1)

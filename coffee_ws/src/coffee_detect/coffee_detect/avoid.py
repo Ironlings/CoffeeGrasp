@@ -25,7 +25,7 @@ class PointCloudOmniAvoidance(Node):
         # ================= 安全距离 (车体边缘 + 缓冲) =================
         self.declare_parameter('safe_buffer_front', 0.1)   # 前方缓冲
         self.declare_parameter('safe_buffer_back', 0.1)    # 后方缓冲
-        self.declare_parameter('safe_buffer_side', 0.1)    # 侧方缓冲
+        self.declare_parameter('safe_buffer_side', 0.05)    # 侧方缓冲
         self.declare_parameter('safe_buffer_rotate', -0.08)  # 旋转缓冲
         
         # 计算实际安全距离
