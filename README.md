@@ -21,9 +21,11 @@
 *抓取演示动画（2倍速）：机械臂根据检测到的咖啡袋位姿，自主完成接近、夹取与提起。*
 
 ![put](coffee_ws/src/coffee_detect/coffeetest/demo/put.gif)
+
 *交接演示：机械臂与小车协作，根据检测到的ArUco标记，自主完成接近并放下咖啡。*
 
 ![align](coffee_ws/src/coffee_detect/coffeetest/demo/align.gif)
+
 *对齐电梯面板演示：小车通过机械臂上摄像头识别电梯面板并靠近，使机械臂能够按到按钮。*
 
 ---
@@ -98,6 +100,16 @@ conda activate sam
 ros2 launch coffee_detect coffee.launch.py
 ```
 
-> **提示**：建议在不同终端窗口中分别运行上述命令，便于日志监控与调试。
+### 3. 脚本运行
+
+可以使用脚本启动每个模块，`/coffee_ws`目录下有各个模块的脚本文件
+
+`autodrop.sh`用于与机器狗交接，控制参数在`config/drop_params.yaml`中
+
+`base.sh`用于启动机械臂控制节点
+
+`detect.sh`用于检测并抓取咖啡，控制参数在`config/params.yaml`中
+
+`goin.sh`用于进入电梯
 
 ---

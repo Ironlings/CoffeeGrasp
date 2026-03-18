@@ -272,10 +272,10 @@ class MotionCommander(Node):
             # ba = self.lidar_data['back_angle']
 
             # 如果数据丢失，停止
-            if rd is None or ra is None or fd is None:
-                self.get_logger().warn("雷达数据丢失，暂停停车")
+            if (rd is None and phase == 2) or (ra is None and phase == 1) or (fd is None and phase == 0):
+                self.get_logger().warn(f"phase{phase} 雷达数据丢失，暂停停车")
                 self.pub_cmd.publish(Twist())
-                time.sleep(0.1)
+                time.sleep(0.5)
                 converge_count = 0
                 continue
 

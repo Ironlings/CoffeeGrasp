@@ -1,11 +1,15 @@
 coffee_detect:
   ros__parameters:
-    sam_checkpoint: "/home/agv/armws/coffee_ws/src/coffee_detect/coffeetest/sam3.pt"
+    sam_checkpoint: "/home/agv/armws/coffee_ws/src/coffee_detect/coffeetest/sam3.pt" # sam3权重路径
+    # 相机内参
     camera_fx: 490.2380676269531
     camera_fy: 490.2380676269531
     camera_cx: 316.89483642578125
     camera_cy: 209.28350830078125
+    # 袋子区域最小像素数
     min_area: 1000
+    # 手眼标定得到的tf
     handeye_pos: [-0.07482322180223497, 0.00623968754635619, 0.050192986145776636]
     handeye_quat: [-0.1197419547833481, 0.12550407599676805, -0.7127657428175671, 0.6796142928445386]
+    # 预设搜索位姿
     search_poses_file: "/home/agv/armws/coffee_ws/src/coffee_detect/config/search_pos.json"
