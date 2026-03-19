@@ -255,7 +255,7 @@ class MotionCommander(Node):
         converge_count = 0
         required_frames = 5
         
-        # 角度对齐阈值
+        # 角度对齐阈值—
         angle_threshold = np.radians(3.0)  # 3 度
         # 距离对齐阈值
         dist_threshold = 0.03  # 3cm
@@ -376,7 +376,7 @@ class MotionCommander(Node):
             self.pub_cmd.publish(cmd)
             
             # 超时保护（防止无限循环）
-            if time.time() - start_time > 30.0:
+            if time.time() - start_time > 90.0:
                 self.get_logger().warn("停车超时，强制结束")
                 break
 
@@ -385,6 +385,84 @@ class MotionCommander(Node):
         self.parking_mode = False
         duration = time.time() - start_time
         self.get_logger().info(f"停车总用时：{duration:.2f} 秒 ~")
+
+    # ================= 新增：离开电梯函数 =================
+    def leave_elevator(self):
+        """
+        离开电梯逻辑：
+        1. 左移，直到右墙距离 (rd) = 0.85 米
+        2. 前移，直到右墙距离 (rd) = None (墙消失)
+        """
+        self.get_logger().info(">>> 开始执行离开电梯流程 <<<")
+        self.parking_mode = True  # 必须开启，否则 pc_callback 不更新数据
+        
+        # --- 阶段 1: 左移至 rd = 0.85 ---
+        target_rd = 0.85
+        dist_thresh = 0.02
+        kp_y = 0.6
+        max_vy = 0.3
+        timeout_p1 = 30.0
+        start_time = time.time()
+        
+        self.get_logger().info(f"阶段 1: 左移调整右墙距离至 {target_rd}m")
+        while rclpy.ok():
+            rclpy.spin_once(self)
+            rd = self.lidar_data['right_dist']
+            
+            # 超时保护
+            if time.time() - start_time > timeout_p1:
+                self.get_logger().warn("阶段 1 超时，强制进入下一阶段")
+                break
+            
+            if rd is None:
+                self.get_logger().warn("阶段 1: 右墙数据丢失")
+                continue
+            self.get_logger().info(f"当前右墙距离{rd}")
+            err = target_rd - rd
+            cmd = Twist()
+            # 如果 rd < target (太近)，err > 0，cmd.linear.y > 0 (向左，远离右墙)
+            cmd.linear.y = np.clip(kp_y * err, -max_vy, max_vy)
+            
+            self.pub_cmd.publish(cmd)
+            
+            if abs(err) < dist_thresh:
+                self.get_logger().info(f"阶段 1 完成：当前右墙距离 {rd:.2f}m")
+                break
+        
+        self.pub_cmd.publish(Twist())
+        time.sleep(0.5)
+
+        # --- 阶段 2: 前移至 rd = None ---
+        max_vx = 0.4
+        timeout_p2 = 40.0
+        start_time = time.time()
+        confirm_count = 0 # 确认连续几帧为 None 以防噪声
+        
+        self.get_logger().info("阶段 2: 前移直到右墙消失 (rd=None)")
+        while rclpy.ok():
+            rclpy.spin_once(self)
+            rd = self.lidar_data['right_dist']
+            
+            # 超时保护
+            if time.time() - start_time > timeout_p2:
+                self.get_logger().warn("阶段 2 超时，强制停止")
+                break
+            
+            if rd is None:
+                confirm_count += 1
+                if confirm_count >= 3: # 连续 3 帧确认消失
+                    self.get_logger().info("阶段 2 完成：右墙已消失，已离开电梯区域")
+                    break
+            else:
+                confirm_count = 0 # 重置计数器
+                # 如果还没消失，继续前移
+                cmd = Twist()
+                cmd.linear.x = max_vx
+                self.pub_cmd.publish(cmd)
+        
+        self.pub_cmd.publish(Twist())
+        self.parking_mode = False
+        self.get_logger().info(">>> 离开电梯流程结束 <<<")
 
     # =====================================================
     # 工具函数 (来自 WallFollower)
@@ -467,15 +545,18 @@ def main(args=None):
         node.wait_for_panel_align()
 
         # 1. 基础移动与识别
-        node.move('y', 0.5, 0.8)      # 左移0.8
+        node.move('y', 0.5, 0.7)      # 左移0.8
         node.wait_for_open()          # 等待 YOLO
-        node.move('x', 0.5, 2.0)      # 前进2.0
+        node.move('x', 0.5, 1.5)      # 前进2.0
         
         # 2. 自转 180 
         # node.move('z', 0.5, 3.14)     
 
         # 3. 3D 雷达精准停车 (右墙 
         node.lidar_park()
+
+        # 4. 离开电梯
+        node.leave_elevator()
 
     except KeyboardInterrupt:
         pass

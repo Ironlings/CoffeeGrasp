@@ -22,7 +22,7 @@ class ControlPanelFollower(Node):
         self.declare_parameter('camera_fy', 490.2380676269531)
         self.declare_parameter('camera_cx', 316.89483642578125)
         self.declare_parameter('camera_cy', 209.28350830078125)
-        self.declare_parameter('target_distance', 0.65)
+        self.declare_parameter('target_distance', 0.39)
         self.declare_parameter('kp_linear', 0.50)
         self.declare_parameter('kp_y', 0.50)
         self.declare_parameter('kp_angular', 0.50)
