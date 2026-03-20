@@ -545,9 +545,9 @@ def main(args=None):
         node.wait_for_panel_align()
 
         # 1. 基础移动与识别
-        node.move('y', 0.5, 0.7)      # 左移0.8
-        node.wait_for_open()          # 等待 YOLO
-        node.move('x', 0.5, 1.5)      # 前进2.0
+        node.move('y', 0.5, 0.7)      # 左移 从电梯外面板移动到正对电梯门
+        node.wait_for_open()          # 等待 YOLO 识别门开
+        node.move('x', 0.5, 1.3)      # 前进到电梯中心
         
         # 2. 自转 180 
         # node.move('z', 0.5, 3.14)     

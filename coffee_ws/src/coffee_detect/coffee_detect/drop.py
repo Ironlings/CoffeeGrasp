@@ -78,7 +78,7 @@ class CoffeeDropNode(Node):
         self.X_THRESHOLD = 0.48      # x阈值（米）
         self.Y_THRESHOLD = 0.08      # y阈值（米）
         self.YAW_THRESHOLD = np.radians(5)  # 朝向阈值（弧度）
-        self.YAW_TARGET = np.radians(90)    # 目标朝向（弧度）
+        self.YAW_TARGET = np.radians(-90)    # 目标朝向（弧度）
 
 
         # ===== ROS 接口 =====
@@ -176,7 +176,7 @@ class CoffeeDropNode(Node):
                     self.get_logger().warn(f"ID {marker_id} 位姿求解失败")
                     continue
                 R_mat, _ = cv2.Rodrigues(rvec)
-                poses[marker_id] = {"tvec": tvec.flatten(), "R": R_mat}
+                poses[i] = {"tvec": tvec.flatten(), "R": R_mat}
                 x, y, z = tvec.flatten() * 100
                 self.get_logger().debug(f"[ID {marker_id}] 位置 (cm): x={x:.1f}, y={y:.1f}, z={z:.1f}")
             
@@ -186,11 +186,11 @@ class CoffeeDropNode(Node):
             
             # ===== 3. 计算目标点（篮子中心） =====
             target_points = {}
-            for mid in self.required_markers:
-                tvec = poses[mid]["tvec"]
-                R = poses[mid]["R"]
+            for i, mid in enumerate(self.required_markers):
+                tvec = poses[i]["tvec"]
+                R = poses[i]["R"]
                 z_axis = R @ np.array([0, 0, 1])  # 相机Z轴方向
-                target_points[mid] = tvec + self.basket_offset_m * z_axis  # 向深处偏移
+                target_points[i] = tvec + self.basket_offset_m * z_axis  # 向深处偏移
             
             # 中点位置
             p0, p1 = target_points[0], target_points[1]
@@ -295,16 +295,18 @@ class CoffeeDropNode(Node):
         if frame is None:
             self.get_logger().warn("⚠️ 调整开始时未获取到帧")
             return initial_position, None
-            
-        rgb, depth, _ = frame
-        position, quaternion = self.process_frame(rgb, depth)
-        if position is None or quaternion is None:
-            self.get_logger().warn("⚠️ 初始位姿计算失败")
-            return initial_position, None
-        yaw = self.get_base_yaw(quaternion)
+
+
 
         # 调整循环
         while (time.time() - start_time) < self.MAX_ADJUST_TIME:
+                        
+            rgb, depth, _ = frame
+            position, quaternion = self.process_frame(rgb, depth)
+            if position is None or quaternion is None:
+                self.get_logger().warn("⚠️ 初始位姿计算失败")
+                return initial_position, None
+            yaw = self.get_base_yaw(quaternion)
             # 检查是否满足条件
             if position[0] < self.X_THRESHOLD and abs(position[1]) < self.Y_THRESHOLD and abs(self.YAW_TARGET - yaw) < self.YAW_THRESHOLD:
                 self.get_logger().info(
@@ -318,7 +320,7 @@ class CoffeeDropNode(Node):
             # 计算调整速度
             vx = self.VX_ADJUST if position[0] >= self.X_THRESHOLD else 0.0
             vy = self.VY_ADJUST if position[1] > self.Y_THRESHOLD else (-self.VY_ADJUST if position[1] < -self.Y_THRESHOLD else 0.0)
-            vz = self.VZ_ADJUST if self.YAW_TARGET - yaw >= self.YAW_THRESHOLD else (-self.VZ_ADJUST if self.YAW_TARGET - yaw <= -self.YAW_THRESHOLD else 0.0)
+            vz = -self.VZ_ADJUST if self.YAW_TARGET - yaw >= self.YAW_THRESHOLD else (self.VZ_ADJUST if self.YAW_TARGET - yaw <= -self.YAW_THRESHOLD else 0.0)
             
             # 仅当需要调整时才发布速度命令
             if vx != 0.0 or vy != 0.0 or vz != 0.0:
